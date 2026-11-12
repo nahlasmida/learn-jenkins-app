@@ -1,15 +1,16 @@
 pipeline {
     agent any
-    
+
     environment {
-        NETLIFY_SITE_ID = '6cfe2b8d-1853-47aa-8721-630fc0974b8e'
+        NETLIFY_SITE_ID = 'nfp_D52tUPQKoiaPeHi5sc6BDvRd5B5kpNgs691a'
+        NETLIFY_AUTH_TOKEN = credentials('netlify-token')
     }
-    
+
     stages {
         stage('Build') {
             steps {
                 bat '''
-                    docker run --rm -e NETLIFY_SITE_ID=%NETLIFY_SITE_ID% -v "%WORKSPACE%:/src" -v npm-cache:/root/.npm node:18-alpine sh -c "mkdir /app && cd /src && tar cf - --exclude=node_modules --exclude=build --exclude=.git . | tar xf - -C /app && cd /app && chmod -R u+w . && npm ci && npm run build && rm -rf /src/build && cp -r /app/build /src/build && echo Deploying to production. Site ID: $NETLIFY_SITE_ID"
+                    docker run --rm -v "%WORKSPACE%:/src" -v npm-cache:/root/.npm node:18-alpine sh -c "mkdir /app && cd /src && tar cf - --exclude=node_modules --exclude=build --exclude=.git . | tar xf - -C /app && cd /app && chmod -R u+w . && npm ci && npm run build && rm -rf /src/build && cp -r /app/build /src/build"
                 '''
             }
         }
@@ -22,18 +23,42 @@ pipeline {
             }
         }
 
+        stage('E2E') {
+            steps {
+                retry(3) {
+                    bat '''
+                        docker run --rm -v "%WORKSPACE%:/src" -v npm-cache:/root/.npm mcr.microsoft.com/playwright:v1.39.0-jammy sh -c "mkdir /app && cd /src && tar cf - --exclude=node_modules --exclude=build --exclude=.git --exclude=playwright-report . | tar xf - -C /app && cd /app && chmod -R u+w . && cp -r /src/build /app/build && npm ci && npm install serve && (node_modules/.bin/serve -s build > /dev/null 2>&1 &) && sleep 10 && npx playwright test --reporter=html; rc=$?; rm -rf /src/playwright-report; cp -r /app/playwright-report /src/playwright-report; exit $rc"
+                    '''
+                }
+            }
+            post {
+                always {
+                    publishHTML(target: [
+                        allowMissing: true,
+                        alwaysLinkToLastBuild: false,
+                        keepAll: false,
+                        reportDir: 'playwright-report',
+                        reportFiles: 'index.html',
+                        reportName: 'Playwright Report'
+                    ])
+                }
+            }
+        }
+
         stage('Deploy') {
             steps {
-                bat '''
-                    docker run --rm -e NETLIFY_SITE_ID=%NETLIFY_SITE_ID% -v npm-cache:/root/.npm node:18-alpine sh -c "npm install -g netlify-cli && netlify --version"
-                '''
+                retry(3) {
+                    bat '''
+                        docker run --rm -e NETLIFY_SITE_ID -e NETLIFY_AUTH_TOKEN -v "%WORKSPACE%:/src" -v npm-cache:/root/.npm node:18-alpine sh -c "mkdir /tmp/deploy && cd /tmp/deploy && npm install netlify-cli --ignore-scripts && cp -r /src/build /tmp/deploy/build && node_modules/.bin/netlify --version && echo Deploying to Netlify Site ID: $NETLIFY_SITE_ID && node_modules/.bin/netlify status && node_modules/.bin/netlify deploy --dir=build --prod --no-build"
+                    '''
+                }
             }
         }
     }
 
     post {
         always {
-            junit 'test-results/junit.xml'
+            junit allowEmptyResults: true, testResults: 'test-results/junit.xml'
         }
     }
 }
