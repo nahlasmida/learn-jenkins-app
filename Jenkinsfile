@@ -1,14 +1,16 @@
 pipeline {
     agent any
+    
     environment {
         NETLIFY_SITE_ID = '6cfe2b8d-1853-47aa-8721-630fc0974b8e'
     }
+    
     stages {
         stage('Build') {
             steps {
                 bat '''
-                    docker run --rm -v "%WORKSPACE%:/src" -v npm-cache:/root/.npm node:18-alpine sh -c "mkdir /app && cd /src && tar cf - --exclude=node_modules --exclude=build --exclude=.git . | tar xf - -C /app && cd /app && chmod -R u+w . && npm ci && npm run build && rm -rf /src/build && cp -r /app/build /src/build"
-                && echo Deploying to production. Site ID: $NETLIFY_SITE_ID'''
+                    docker run --rm -e NETLIFY_SITE_ID=%NETLIFY_SITE_ID% -v "%WORKSPACE%:/src" -v npm-cache:/root/.npm node:18-alpine sh -c "mkdir /app && cd /src && tar cf - --exclude=node_modules --exclude=build --exclude=.git . | tar xf - -C /app && cd /app && chmod -R u+w . && npm ci && npm run build && rm -rf /src/build && cp -r /app/build /src/build && echo Deploying to production. Site ID: $NETLIFY_SITE_ID"
+                '''
             }
         }
 
@@ -23,7 +25,7 @@ pipeline {
         stage('Deploy') {
             steps {
                 bat '''
-                    docker run --rm -v npm-cache:/root/.npm node:18-alpine sh -c "npm install -g netlify-cli && netlify --version"
+                    docker run --rm -e NETLIFY_SITE_ID=%NETLIFY_SITE_ID% -v npm-cache:/root/.npm node:18-alpine sh -c "npm install -g netlify-cli && netlify --version"
                 '''
             }
         }
