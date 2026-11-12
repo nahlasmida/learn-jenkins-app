@@ -17,6 +17,14 @@ pipeline {
                 '''
             }
         }
+
+        stage('Deploy') {
+            steps {
+                bat '''
+                    docker run --rm -v npm-cache:/root/.npm node:18-alpine sh -c "mkdir /tmp/deploy && cd /tmp/deploy && npm install netlify-cli && node_modules/.bin/netlify --version"
+                '''
+            }
+        }
     }
 
     post {
@@ -24,11 +32,4 @@ pipeline {
             junit 'test-results/junit.xml'
         }
     }
-    stage('Deploy') {
-            steps {
-                bat '''
-                    docker run --rm -v npm-cache:/root/.npm node:18-alpine sh -c "mkdir /tmp/deploy && cd /tmp/deploy && npm install netlify-cli && node_modules/.bin/netlify --version"
-                '''
-            }
-        }
 }
